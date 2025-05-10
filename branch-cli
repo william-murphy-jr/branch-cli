@@ -1,0 +1,165 @@
+#!/bin/zsh
+
+# Ensure the script is running in Z Shell
+if [[ -z "$ZSH_VERSION" ]]; then
+    echo "Error: This script must be run in Z Shell (zsh)."
+    exit 1
+fi
+
+# ----------------------------------
+# Configurable Settings
+# ----------------------------------
+
+initials="wmj"
+jira_prefix="ModalTech"  # Optional: prefix for Jira ticket numbers (e.g., "ModalTech-3201")
+version="0.3"
+space_separator="_"
+
+# ----------------------------------
+# Init Runtime Variables
+# ----------------------------------
+
+trial_run=false
+use_mission_control=false
+working_dir=$(pwd | grep -Eho "webapp")
+TMP="$HOME/tmp"
+args=()
+
+# ----------------------------------
+# Help / Manual Description
+# ----------------------------------
+
+man_data="Name: $0 ver: $version
+Usage: branch-cli <ticket-number> <branch-description> [ -d ] [ -i ] [ --frontend ] [ --cursor ] [ -m ]
+<ticket-number>: Numeric part of the Jira ticket (e.g. 3201)
+<branch-description>: Freeform description, use quotes if multi-word
+-d: Add current date to branch in d-m-y format
+-i: Append your initials to the branch
+-m: Add Mission Control flag
+-t: Trial run flag (no actual branch creation)
+--frontend: Enable frontend flag (buildy:watch integration)
+--cursor: Enable Cursor Editor"
+
+# ----------------------------------
+# Directory Safety Check
+# ----------------------------------
+
+if [[ $working_dir != "webapp" ]]; then
+    echo "You must run this script from within the webapp directory."
+    exit 1
+fi
+
+# ----------------------------------
+# Help / Version Output
+# ----------------------------------
+
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "$man_data"
+    exit 0
+elif [[ "$1" == "-v" || "$1" == "--version" ]]; then
+    echo "version: $version"
+    exit 0
+fi
+
+# ----------------------------------
+# Validate Required Inputs
+# ----------------------------------
+
+if [[ $# -lt 2 ]]; then
+    echo "Usage error: ticket number and description are required."
+    echo "$man_data"
+    exit 1
+fi
+
+# ----------------------------------
+# Required Inputs
+# ----------------------------------
+
+ticket_number="$1"
+description="$2"
+shift 2  # Remove ticket number and description from args
+
+# Format Jira ticket prefix
+if [[ -n "$jira_prefix" && "$ticket_number" =~ '^[0-9]+$' ]]; then
+    prefix="${jira_prefix:l}-$ticket_number"
+else
+    prefix="$ticket_number"
+fi
+
+# ----------------------------------
+# Clean and format description:
+#  - Replace spaces with underscores
+#  - Replace colons with double dashes
+#  - Strip special characters
+# ----------------------------------
+
+description_cleaned=$(echo "$description" \
+    | tr ":" "-" \
+    | tr -s " " \
+    | tr " " "$space_separator" \
+    | tr -d '~!@#$%^&*()[]{}<>/?')
+
+# Initialize suffix and command flags
+branch_suffix=""
+exec_flags=()
+pre_b_flags=""
+
+# ----------------------------------
+# Parse Optional Flags
+# -d and -i are appended to the branch name
+# --cursor and --frontend are execution flags
+# -m is inserted before or after -b depending on CLI style
+# ----------------------------------
+
+for arg in "$@"; do
+    case "$arg" in
+        "-t")
+            trial_run=true
+            ;;
+        "-d")
+            branch_suffix="${branch_suffix}--$(date +%d-%m-%y)"
+            ;;
+        "-i")
+            branch_suffix="${branch_suffix}--$initials"
+            ;;
+        "--frontend")
+            exec_flags+=("--frontend")
+            ;;
+        "--cursor")
+            exec_flags+=("--cursor")
+            ;;
+        "-m")
+            use_mission_control=true
+            ;;
+    esac
+done
+
+# Final branch name: combine prefix, description, and suffix
+branch_base="${prefix}-${description_cleaned}${branch_suffix}"
+branch_base=${branch_base:l}  # lowercase everything
+
+# Build final command
+if [[ "$use_mission_control" == true ]]; then
+    pre_b_flags="-m"
+fi
+
+branch_created="slack remote-dev $pre_b_flags -b $branch_base ${exec_flags[@]}"
+branch_created=$(echo "$branch_created" | tr -s " ")  # Clean extra spaces
+
+# ----------------------------------
+# Logging Setup
+# ----------------------------------
+
+mkdir -p "$TMP"
+rm -f "$TMP/log.txt"
+touch "$TMP/log.txt"
+
+# ----------------------------------
+# Trial Run or Actual Execution
+# ----------------------------------
+
+if [[ "$trial_run" == true ]]; then
+    echo "\n*** Trial run ***: $branch_created\n"
+else
+    eval "$branch_created" | tee "$TMP/log.txt"
+fi
