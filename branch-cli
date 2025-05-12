@@ -6,12 +6,18 @@ if [[ -z "$ZSH_VERSION" ]]; then
     exit 1
 fi
 
+# Ensure we're inside a Git repository
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Error: Not inside a Git repository." >&2
+    return 1
+fi
+
 # ----------------------------------
 # Configurable Settings
 # ----------------------------------
 
 initials="wmj"
-jira_prefix="ModalTech"  # Optional: prefix for Jira ticket numbers (e.g., "ModalTech-3201")
+jira_prefix="ecompl"  # Optional: prefix for Jira ticket numbers (e.g., "ModalTech-3201")
 version="0.3"
 space_separator="_"
 
